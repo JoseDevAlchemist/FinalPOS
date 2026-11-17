@@ -155,7 +155,8 @@ begin
       where p.active and c.stock_quantity<=2 order by c.stock_quantity,c.id limit 12) t),
     'recentSales',(select coalesce(jsonb_agg(to_jsonb(t)),'[]'::jsonb) from (
       select id,staff_name,total,payment_method,payment_status,created_at from public.pos_sales where created_at>=v_start order by created_at desc,id limit 10) t),
-    'exchangeRate',coalesce((select value->'kes_per_usd' from public.shop_settings where key='exchange_rate'),'130'::jsonb)
+    'exchangeRate',coalesce((select to_jsonb(s)->'value'->'kes_per_usd'
+      from public.shop_settings s where to_jsonb(s)->>'key'='exchange_rate' limit 1),'130'::jsonb)
   );
 end;
 $$;

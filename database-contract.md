@@ -528,15 +528,17 @@ contract alongside the cash and management suites.
 
 ## Phase 5 — Exchange-rate settings
 
-Local migration `20261117100000_pos_exchange_rate.sql` adds the requested numeric
+On the POS settings layout, migration `20261117100000_pos_exchange_rate.sql` adds the numeric
 `exchange_rate_kes_to_usd` (despite its name, KES per 1 USD), default 130, positive
 and at most 100000. The existing primary key plus fixed `exchange_rate` key check
-allow one row; migration seeds it and refuses unexpected existing keys. App roles
+allow one row. The migration creates that row on compatible tables. App roles
 cannot insert/delete; only active managers can update the rate column. Public
 read access remains for storefront display. Anonymous write access is removed.
 A protected trigger synchronizes `value.kes_per_usd` for legacy readers and stamps
 actor/time. Manager Server Action performs a direct session-authorized UPDATE.
-Remote storefront cache behavior is not controlled by this repository.
+The migration skips incompatible storefront schemas and tables with additional
+settings. The dashboard falls back to 130 on the alternate schema. The POS
+exchange-rate settings screen requires the compatible schema.
 
 
 ## Phase 5 — Realtime web-order notifications

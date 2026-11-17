@@ -4,46 +4,13 @@
 
 create extension if not exists pgcrypto;
 
--- Shop settings (shared). Minimal table for exchange rate / config.
+-- Provide a baseline for POS-only databases that lack storefront settings.
 create table if not exists public.shop_settings (
   key text primary key,
   value jsonb not null,
   updated_at timestamptz not null default now(),
   updated_by uuid references public.pos_users (id) on delete set null
 );
-
-insert into public.shop_settings (key, value)
-values ('exchange_rate', jsonb_build_object('kes_per_usd', 130))
-on conflict (key) do nothing;
-
-alter table public.shop_settings enable row level security;
-
-drop policy if exists "Anyone can read shop settings" on public.shop_settings;
-create policy "Anyone can read shop settings"
-  on public.shop_settings
-  for select
-  to anon, authenticated
-  using (true);
-
--- Requested: allow manager updates from the app; anon key must be able to save.
-drop policy if exists "Anon can save shop settings" on public.shop_settings;
-create policy "Anon can save shop settings"
-  on public.shop_settings
-  for all
-  to anon
-  using (true)
-  with check (true);
-
-drop policy if exists "Managers can save shop settings" on public.shop_settings;
-create policy "Managers can save shop settings"
-  on public.shop_settings
-  for all
-  to authenticated
-  using (public.pos_is_manager())
-  with check (public.pos_is_manager());
-
-grant select on table public.shop_settings to anon, authenticated;
-grant insert, update on table public.shop_settings to anon, authenticated;
 
 -- Sales
 create table if not exists public.pos_sales (

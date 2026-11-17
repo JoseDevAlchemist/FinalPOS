@@ -975,3 +975,12 @@ Verification:
 
 - Replaced the default favicon with the existing Pedigree Leather logo at
   16, 32 and 48 pixels. Next.js serves it at `/favicon.ico`.
+
+## 2026-11-18 — Storefront settings migration compatibility
+
+- Removed the sales migration's settings seed and grants. The exchange-rate
+  migration skips storefront schemas that do not match the POS layout and
+  tables that contain additional settings. The manager dashboard retains its
+  default rate when the POS exchange-rate row is absent.
+- The remote schema query and migration push were blocked by a missing Supabase
+  access token. Local pgTAP could not connect to PostgreSQL.

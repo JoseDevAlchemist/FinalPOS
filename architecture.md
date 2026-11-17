@@ -170,10 +170,12 @@ Electronic refunds are only marked paid when the provider confirms.
 
 ### 4.5 Exchange rate
 
-A single shared setting (`1 USD = X KES`) is the authority. Manager-only RPC
-updates it with audit history. USD display prices are derived from integer KES
-base prices with documented rounding. Completed sales keep their historical KES
-amounts and are never repriced.
+On the POS settings layout, an active manager can update the exchange-rate
+column. The database records the actor and timestamp. When the storefront uses
+a different settings layout, the migration leaves its settings intact and the
+manager dashboard uses its default rate. USD display prices are derived from
+integer KES base prices with documented rounding. Completed sales retain their
+historical KES amounts.
 
 ### 4.6 Website orders
 
