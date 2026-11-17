@@ -970,3 +970,8 @@ Verification:
   MPESA_CALLBACK_SECRET is absent and the current STK configuration requires
   at least 32 characters before initiation. No ENV values were changed and no
   payment/network request was made. Documentation-only change.
+
+## 2026-11-18 — POS favicon
+
+- Replaced the default favicon with the existing Pedigree Leather logo at
+  16, 32 and 48 pixels. Next.js serves it at `/favicon.ico`.
