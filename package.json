@@ -6,15 +6,34 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "auth:link": "node scripts/link-pos-users.mjs",
+    "test:e2e": "playwright test",
+    "test:rls": "supabase test db --local",
+    "mpesa:register-urls": "node --env-file=.env.local --experimental-strip-types scripts/register-mpesa-urls.ts",
+    "test:mpesa": "node scripts/test-mpesa-local.mjs"
   },
   "dependencies": {
+    "@point-of-sale/webserial-customer-display": "^1.0.0",
+    "@react-pdf/renderer": "^4.9.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.119.0",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "framer-motion": "^14.11.1",
+    "jsbarcode": "^3.12.3",
+    "lucide-react": "^1.71.0",
     "next": "16.4.6",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "resend": "^6.37.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/turbopack": "4.3.3",
+    "@types/jsbarcode": "^3.11.4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

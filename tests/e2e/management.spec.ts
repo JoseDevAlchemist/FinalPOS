@@ -1,0 +1,150 @@
+import { randomUUID } from "node:crypto";
+import { loadEnvFile } from "node:process";
+import { test, expect, type Page } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
+import { z } from "zod";
+
+loadEnvFile(".env.local");
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!url || !serviceKey || !["localhost", "127.0.0.1"].includes(new URL(url).hostname)) throw Error("Local Supabase required.");
+const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
+const publicKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+if (!publicKey) throw Error("Local publishable key required.");
+const storefront = createClient(url, publicKey, { auth: { persistSession: false } });
+async function login(page: Page, pin: string, path: string) {
+  await page.goto("/login");
+  for (const digit of pin) await page.getByRole("button", { name: digit, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${path}$`), { timeout: 60_000 });
+}
+
+test("manager creates and publishes a bag, adjusts stock with audit, edits visibility, and sees it in POS", async ({ page }, testInfo) => {
+  const name = `Management tote ${randomUUID().slice(0, 8)}`;
+  let productId: string | undefined;
+  try {
+    await login(page, "4826", "/manager");
+    await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("manager-overview.png") });
+    await page.getByRole("navigation", { name: "Manager navigation" }).getByRole("link", { name: "Products", exact: true }).click();
+    await page.getByRole("link", { name: "Add product", exact: true }).click();
+    await page.getByLabel("Name", { exact: true }).fill(name);
+    await page.getByLabel("Price (KES)", { exact: true }).fill("3500");
+    await page.getByLabel("Barcode", { exact: true }).fill(`MGT-${name.split(" ").at(-1)}`);
+    const tan = page.getByRole("group", { name: "Colour 1", exact: true });
+    await tan.getByLabel("Initial stock", { exact: true }).fill("3");
+    await tan.getByLabel("Image URL", { exact: true }).fill("/pedigree-logo.png");
+    await page.getByRole("group", { name: "Select colours", exact: true }).getByLabel("Black", { exact: true }).check();
+    await page.getByLabel("Publish on website", { exact: true }).check();
+    const black = page.getByRole("group", { name: "Colour 2", exact: true });
+    await black.getByLabel("Colour name", { exact: true }).fill("Black");
+    await black.getByLabel("Initial stock", { exact: true }).fill("2");
+    await black.getByLabel("Image URL", { exact: true }).fill("/next.svg");
+    await page.screenshot({ path: testInfo.outputPath("add-product.png") });
+    await page.getByRole("button", { name: "Create product", exact: true }).click();
+    await expect(page).toHaveURL(/\/manager\/products\/[0-9a-f-]{36}$/, { timeout: 60_000 });
+    productId = z.string().uuid().parse(new URL(page.url()).pathname.split("/").at(-1));
+    const published = await admin.from("products").select("category,is_website_published").eq("id", productId).single();
+    expect(published.error).toBeNull();
+    expect(published.data).toEqual({ category: "bag", is_website_published: true });
+    const publicBag = await storefront.from("products").select("id").eq("id", productId);
+    expect(publicBag.error).toBeNull();
+    expect(publicBag.data).toEqual([{ id: productId }]);
+    await page.goto("/manager/products");
+    await page.getByLabel("Search products", { exact: true }).fill(name);
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    const row = page.locator("li").filter({ has: page.getByRole("heading", { name, exact: true }) });
+    await expect(row.getByText("Published", { exact: true })).toBeVisible();
+    for (const [delta, reason] of [["2", "Local delivery received"], ["-1", "Local damaged unit"]]) {
+      await row.getByRole("button", { name: "Adjust stock", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Adjust stock", exact: true });
+      await dialog.getByLabel(/^Change/).fill(delta);
+      await dialog.getByLabel("Reason", { exact: true }).fill(reason);
+      await dialog.getByRole("button", { name: "Save adjustment", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+    }
+    await page.goto("/manager/inventory");
+    const history = page.getByRole("row").filter({ hasText: name });
+    await expect(history.getByText("Local delivery received", { exact: true })).toBeVisible();
+    await expect(history.getByText("Local damaged unit", { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("inventory-history.png") });
+    const movements = await admin.from("stock_movements").select("delta,reason,reference_uuid,actor_staff_id").eq("product_id", productId);
+    expect(movements.error).toBeNull();
+    expect(movements.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ delta: 2, reason: "Local delivery received", reference_uuid: expect.any(String), actor_staff_id: "a1c9f1e2-0000-4000-8000-000000000002" }),
+      expect.objectContaining({ delta: -1, reason: "Local damaged unit" }),
+    ]));
+    const adjustments = await admin.from("pos_stock_adjustments")
+      .select("delta,reason,reference_uuid,actor_staff_id,quantity_before,quantity_after")
+      .eq("product_id", productId);
+    expect(adjustments.error).toBeNull();
+    expect(adjustments.data).toHaveLength(4);
+    expect(adjustments.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ delta: 2, quantity_before: 3, quantity_after: 5, reason: "Local delivery received" }),
+      expect.objectContaining({ delta: -1, quantity_before: 5, quantity_after: 4, reason: "Local damaged unit" }),
+    ]));
+    await page.goto(`/manager/products/${productId}`);
+    await page.getByLabel("Publish on website", { exact: true }).uncheck();
+    await page.getByRole("button", { name: "Save product", exact: true }).click();
+    await expect(page).toHaveURL(/\/manager\/products$/);
+    await expect(page.locator("li").filter({ has: page.getByRole("heading", { name, exact: true }) }).getByText("Draft", { exact: true })).toBeVisible();
+    const draft = await storefront.from("products").select("id").eq("id", productId);
+    expect(draft.error).toBeNull();
+    expect(draft.data).toEqual([]);
+    expect((await admin.from("products").select("is_website_published").eq("id", productId).single()).data?.is_website_published).toBe(false);
+    await page.goto(`/manager/products/${productId}`);
+    await page.getByLabel("Publish on website", { exact: true }).check();
+    await page.getByRole("button", { name: "Save product", exact: true }).click();
+    await expect(page).toHaveURL(/\/manager\/products$/);
+    const republished = await storefront.from("products").select("id").eq("id", productId);
+    expect(republished.error).toBeNull();
+    expect(republished.data).toEqual([{ id: productId }]);
+    await page.goto("/pos");
+    const card = page.locator("article").filter({ has: page.getByRole("heading", { name, exact: true }) });
+    await expect(card).toBeVisible();
+    await expect(card.locator("img")).toHaveAttribute("src", /\/pedigree-logo\.png$/);
+    await expect(card.locator("img")).toHaveCSS("object-fit", "cover");
+    await expect(card).toContainText("Tan · 4 in stock");
+    await card.getByRole("radio", { name: /^Black / }).locator("..").click();
+    await expect(card.locator("img")).toHaveAttribute("src", /\/next\.svg$/);
+    await page.screenshot({ path: testInfo.outputPath("manager-product-in-pos.png") });
+  } finally {
+    const cleanup = admin.from("products").update({ active: false });
+    if (productId) await cleanup.eq("id", productId);
+    else await cleanup.eq("name", name);
+  }
+});
+
+test("manager enrolls a cashier with Auth, duplicate PIN is refused, and cashier cannot access management", async ({ page }, testInfo) => {
+  const name = `Cashier fixture ${randomUUID().slice(0, 8)}`;
+  let staffId: string | undefined;
+  try {
+    await login(page, "4826", "/manager");
+    await page.getByRole("navigation", { name: "Manager navigation" }).getByRole("link", { name: "Staff", exact: true }).click();
+    await page.getByLabel("Cashier name", { exact: true }).fill(name);
+    await page.getByLabel("New PIN", { exact: true }).fill("1234");
+    await page.getByRole("button", { name: "Add cashier", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "already assigned" })).toBeVisible();
+    await page.getByLabel("New PIN", { exact: true }).fill("9183");
+    await page.getByRole("button", { name: "Add cashier", exact: true }).click();
+    await expect(page.getByText("Cashier enrolled. They can now sign in with their PIN.", { exact: true })).toBeVisible();
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+    const staff = await admin.from("pos_users").select("id,auth_user_id,role").eq("name", name).single();
+    expect(staff.error).toBeNull();
+    const linked = z.object({ id: z.string().uuid(), auth_user_id: z.string().uuid(), role: z.literal("cashier") }).parse(staff.data);
+    staffId = linked.id;
+    expect((await admin.auth.admin.getUserById(linked.auth_user_id)).data.user?.id).toBe(linked.id);
+    await page.screenshot({ path: testInfo.outputPath("staff-roster.png") });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole("navigation", { name: "Manager navigation" }).getByRole("link", { name: "Staff", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: testInfo.outputPath("staff-mobile.png") });
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await login(page, "9183", "/pos");
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+    await page.goto("/manager/staff");
+    await expect(page).toHaveURL(/\/pos$/);
+    await expect(page.getByRole("heading", { name: "Staff", exact: true })).not.toBeVisible();
+  } finally {
+    if (staffId) await admin.from("pos_users").update({ active: false }).eq("id", staffId);
+  }
+});

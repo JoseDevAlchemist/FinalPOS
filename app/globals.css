@@ -1,26 +1,219 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Pedigree POS 2.0 design tokens.
+
+   Carried over from the Pedigree Leather storefront and the original POS so the
+   three surfaces read as one brand: brown, cream, gold and charcoal, and nothing
+   else. Components use the semantic tokens this file produces — bg-primary,
+   text-muted, border-border — never a raw hex value.
+
+   Everything is written down once, here.
+   --------------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand primitives */
+  --pedigree-brown: #5d4037;
+  --pedigree-gold: #d4af37;
+  --pedigree-cream: #f5e9d9;
+  --pedigree-charcoal: #2b2b2b;
+
+  /* Derived tints — same hues, tuned for contrast on the surfaces above. */
+  --pedigree-brown-deep: #3b2a24; /* 11.4:1 on cream */
+  --pedigree-brown-dark: #4a332b; /* the POS chrome's own brown */
+  --pedigree-gold-bright: #e8ce7a; /* 6.0:1 on brown */
+  --pedigree-cream-soft: #fcf6ee; /* cards sit a shade above the page */
+  --pedigree-cream-deep: #efe1cd; /* wells and pressed states */
+  --pedigree-border: #e2d3bf; /* warm hairline, decorative only */
+  --pedigree-muted: #6e5b4c; /* secondary text on cream, 5.4:1 */
+
+  /* Status colours. A till needs two unambiguous signals — "this is safely
+     stored" and "this is not" — so they are tokens rather than inline greens
+     and reds picked per component. Chosen to hold up on cream and on brown. */
+  --pedigree-success: #1f7a4d;
+  --pedigree-success-soft: #dcefe3;
+  --pedigree-danger: #b3261e;
+  --pedigree-danger-soft: #f7dedb;
+
+  /* Elevation. Warm rather than neutral grey: a grey shadow on cream reads as
+     dirt. */
+  --pedigree-shadow-bar: 0 1px 2px -1px rgb(43 43 43 / 0.18),
+    0 12px 28px -18px rgb(43 43 43 / 0.55);
+  --pedigree-shadow-panel: -28px 0 70px -40px rgb(43 43 43 / 0.7);
+  --pedigree-shadow-card: 0 1px 2px -1px rgb(43 43 43 / 0.1),
+    0 8px 20px -16px rgb(43 43 43 / 0.45);
+  --pedigree-shadow-card-lift: 0 2px 6px -2px rgb(43 43 43 / 0.14),
+    0 18px 38px -22px rgb(43 43 43 / 0.55);
+  --pedigree-shadow-overlay: 0 24px 60px -24px rgb(43 43 43 / 0.6);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Type: a high-contrast serif for display, a plain sans for everything else */
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-cormorant), ui-serif, Georgia, serif;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Brand primitives, for the rare case that needs the raw hue */
+  --color-brown: var(--pedigree-brown);
+  --color-gold: var(--pedigree-gold);
+  --color-cream: var(--pedigree-cream);
+  --color-charcoal: var(--pedigree-charcoal);
+
+  /* Semantic tokens — these are what components use */
+  --color-background: var(--pedigree-cream);
+  --color-foreground: var(--pedigree-charcoal);
+  --color-primary: var(--pedigree-brown);
+  --color-primary-deep: var(--pedigree-brown-deep);
+  --color-primary-dark: var(--pedigree-brown-dark);
+  --color-accent: var(--pedigree-gold);
+  --color-accent-ink: var(--pedigree-gold-bright);
+  --color-card: var(--pedigree-cream-soft);
+  --color-well: var(--pedigree-cream-deep);
+  --color-border: var(--pedigree-border);
+  --color-muted: var(--pedigree-muted);
+
+  --color-success: var(--pedigree-success);
+  --color-success-soft: var(--pedigree-success-soft);
+  --color-danger: var(--pedigree-danger);
+  --color-danger-soft: var(--pedigree-danger-soft);
+  --color-danger-ink: #fff1ef; /* foreground for text on --color-danger */
+
+  --shadow-bar: var(--pedigree-shadow-bar);
+  --shadow-panel: var(--pedigree-shadow-panel);
+  --shadow-card: var(--pedigree-shadow-card);
+  --shadow-card-lift: var(--pedigree-shadow-card-lift);
+  --shadow-overlay: var(--pedigree-shadow-overlay);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--pedigree-cream);
+  color: var(--pedigree-charcoal);
+}
+
+/* Saddle stitch: a dashed rule in the current text colour. Used as the "you
+   are here" marker under the active nav link. */
+@utility stitch {
+  background-image: repeating-linear-gradient(
+    90deg,
+    currentColor 0 3px,
+    transparent 3px 7px
+  );
+}
+
+/* Hides a scroll container's scrollbar without hiding its scrolling. The
+   scroll position stays keyboard reachable, so this never goes on a
+   page-level scroller. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Loading placeholder.
+
+   An opacity animation and nothing else: opacity stays on the compositor, so a
+   grid of skeletons costs no layout and no repaint.
+   --------------------------------------------------------------------------- */
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@utility skeleton-pulse {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: skeleton-pulse 1.7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+/* Thermal paper needs a valid fixed-height fallback in Chromium, which ignores
+   a length combined with auto. Keep the requested roll declaration last. */
+@page {
+  size: 80mm 297mm;
+  size: 80mm auto;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body > *:not(.print-root) {
+    display: none !important;
+  }
+
+  .print-root {
+    position: static !important;
+    display: block !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .print-root [aria-hidden="true"],
+  .no-print,
+  .print-root > [role="dialog"]::backdrop {
+    display: none !important;
+  }
+
+  .print-root > [role="dialog"] {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 80mm !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  .print-root > [role="dialog"] > header {
+    display: none !important;
+  }
+
+  .print-root > [role="dialog"] > div {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  #receipt-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+}
+
+
+/* Digital documents use a full-page layout independent of thermal receipts. */
+@page digital-document {
+  size: A4;
+  margin: 14mm;
+}
+.digital-document { page: digital-document; }
+@media print {
+  body:has(.digital-document) .print-root > dialog { display: none !important; }
+  body:has(.digital-document) > *:not(.digital-print-root) { display: none !important; }
+  body:has(.digital-document) > .digital-print-root { display: block !important; width: auto !important; }
+  .digital-print-root > dialog { position: static !important; width: 100% !important; max-width: none !important; max-height: none !important; padding: 0 !important; border: 0 !important; overflow: visible !important; }
+  .digital-document { width: 100% !important; max-width: none !important; box-shadow: none !important; }
 }

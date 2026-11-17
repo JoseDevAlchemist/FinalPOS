@@ -1,0 +1,2 @@
+export const inputClass = "h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+export const primaryButtonClass = "inline-flex h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-cream hover:bg-primary-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50";
