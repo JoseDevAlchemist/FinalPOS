@@ -133,15 +133,12 @@ body {
   }
 }
 
-/* Thermal paper needs a valid fixed-height fallback in Chromium, which ignores
-   a length combined with auto. Keep the requested roll declaration last. */
-@page {
-  size: 80mm 297mm;
-  size: 80mm auto;
-  margin: 0;
-}
-
 @media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
   html,
   body {
     margin: 0 !important;

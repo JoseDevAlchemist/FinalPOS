@@ -999,3 +999,8 @@ Verification:
 - Settings lookup and card availability passed with mocked inputs. Playwright
   could not start Chromium under the sandbox, and pgTAP could not connect to the
   local PostgreSQL endpoint.
+
+## 2026-11-18 — Thermal receipt page size
+
+- Set the receipt print rule to `size: 80mm auto` with zero margins as requested.
+  Browsers that ignore this declaration use the selected printer paper size.
