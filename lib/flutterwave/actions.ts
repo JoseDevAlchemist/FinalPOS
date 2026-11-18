@@ -1,12 +1,13 @@
 "use server";
 import { z } from "zod";
+import { isCardPaymentConfigured } from "@/lib/flutterwave/config";
 import { requireStaff } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { prepareCardSchema, cardPaymentSchema } from "@/lib/validation/flutterwave";
 
 export async function prepareCardPayment(input: unknown) {
   await requireStaff();
-  if (!process.env.FLW_SECRET_KEY || !process.env.NEXT_PUBLIC_FLW_PUBLIC_KEY) return { ok: false as const, error: "Card payments are not configured.", uncertain: false };
+  if (!isCardPaymentConfigured()) return { ok: false as const, error: "Card payments are not configured.", uncertain: false };
   const parsed = prepareCardSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Review the cart before card payment.", uncertain: false };
   const client = await createClient();

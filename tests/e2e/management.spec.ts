@@ -20,6 +20,7 @@ async function login(page: Page, pin: string, path: string) {
 
 test("manager creates and publishes a bag, adjusts stock with audit, edits visibility, and sees it in POS", async ({ page }, testInfo) => {
   const name = `Management tote ${randomUUID().slice(0, 8)}`;
+  const barcode = `MGT-${name.split(" ").at(-1)}`;
   let productId: string | undefined;
   try {
     await login(page, "4826", "/manager");
@@ -29,10 +30,17 @@ test("manager creates and publishes a bag, adjusts stock with audit, edits visib
     await page.getByRole("link", { name: "Add product", exact: true }).click();
     await page.getByLabel("Name", { exact: true }).fill(name);
     await page.getByLabel("Price (KES)", { exact: true }).fill("3500");
-    await page.getByLabel("Barcode", { exact: true }).fill(`MGT-${name.split(" ").at(-1)}`);
+    await page.getByLabel("Barcode", { exact: true }).fill(barcode);
     const tan = page.getByRole("group", { name: "Colour 1", exact: true });
     await tan.getByLabel("Initial stock", { exact: true }).fill("3");
-    await tan.getByLabel("Image URL", { exact: true }).fill("/pedigree-logo.png");
+    const rate = await admin.from("shop_settings").select("exchange_rate_kes_to_usd")
+      .eq("key", "exchange_rate").single();
+    expect(rate.error).toBeNull();
+    const preview = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
+      .format(3500 / z.number().positive().parse(rate.data?.exchange_rate_kes_to_usd));
+    await expect(page.getByLabel("USD price preview")).toHaveValue(preview);
+    await tan.getByLabel("Upload image", { exact: true }).setInputFiles("public/pedigree-logo.png");
+    await expect(tan.getByLabel("Image URL", { exact: true })).toHaveValue(/\/product-images\//);
     await page.getByRole("group", { name: "Select colours", exact: true }).getByLabel("Black", { exact: true }).check();
     await page.getByLabel("Publish on website", { exact: true }).check();
     const black = page.getByRole("group", { name: "Colour 2", exact: true });
@@ -43,9 +51,18 @@ test("manager creates and publishes a bag, adjusts stock with audit, edits visib
     await page.getByRole("button", { name: "Create product", exact: true }).click();
     await expect(page).toHaveURL(/\/manager\/products\/[0-9a-f-]{36}$/, { timeout: 60_000 });
     productId = z.string().uuid().parse(new URL(page.url()).pathname.split("/").at(-1));
-    const published = await admin.from("products").select("category,is_website_published").eq("id", productId).single();
+    const published = await admin.from("products").select("category,barcode,is_website_published").eq("id", productId).single();
     expect(published.error).toBeNull();
-    expect(published.data).toEqual({ category: "bag", is_website_published: true });
+    expect(published.data).toEqual({ category: "bag", barcode, is_website_published: true });
+    const variants = await admin.from("product_colors")
+      .select("color_name,product_images(angle,image_url)").eq("product_id", productId);
+    expect(variants.error).toBeNull();
+    expect(variants.data).toEqual(expect.arrayContaining([
+      { color_name: "Tan", product_images: [
+        { angle: "front", image_url: expect.stringContaining("/product-images/") },
+      ] },
+      expect.objectContaining({ color_name: "Black" }),
+    ]));
     const publicBag = await storefront.from("products").select("id").eq("id", productId);
     expect(publicBag.error).toBeNull();
     expect(publicBag.data).toEqual([{ id: productId }]);
@@ -147,4 +164,15 @@ test("manager enrolls a cashier with Auth, duplicate PIN is refused, and cashier
   } finally {
     if (staffId) await admin.from("pos_users").update({ active: false }).eq("id", staffId);
   }
+});
+
+test("manager settings shows the configured exchange rate", async ({ page }) => {
+  await login(page, "4826", "/manager");
+  const settings = await admin.from("shop_settings").select("exchange_rate_kes_to_usd")
+    .eq("key", "exchange_rate").single();
+  expect(settings.error).toBeNull();
+  await page.goto("/manager/settings");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Exchange Rate (1 USD = ? KES)", { exact: true }))
+    .toHaveValue(String(settings.data?.exchange_rate_kes_to_usd));
 });

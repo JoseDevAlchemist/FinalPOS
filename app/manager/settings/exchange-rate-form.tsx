@@ -19,7 +19,7 @@ export function ExchangeRateForm({ initialRate }: { initialRate: number }) {
         toast.error("Could not save", result.error);
         return;
       }
-      toast.success("Exchange rate updated. The website will reflect this immediately.");
+      toast.success("Exchange rate updated.");
     } catch {
       toast.error("Could not save", "Check your connection and try again.");
     } finally {

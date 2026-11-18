@@ -137,6 +137,7 @@ export const productCreateSchema = z.object({
   name: z.string().trim().min(2).max(200),
   description: z.string().trim().max(5000).default(""),
   category: productCategorySchema,
+  categoryId: z.string().uuid().optional(),
   basePrice: z.coerce.number().int().min(0).max(100_000_000),
   barcode: z.string().trim().max(128).default(""),
   colors: z.array(z.object({

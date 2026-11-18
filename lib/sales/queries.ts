@@ -18,10 +18,3 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   if (error) throw new Error("Could not load the manager overview.");
   return dashboardSchema.parse(data);
 }
-
-export async function getExchangeRate(): Promise<number> {
-  const client = await createClient();
-  const { data, error } = await client.from("shop_settings").select("exchange_rate_kes_to_usd").eq("key", "exchange_rate").single();
-  if (error) throw new Error("Could not load the exchange rate.");
-  return z.object({ exchange_rate_kes_to_usd: z.number().positive() }).parse(data).exchange_rate_kes_to_usd;
-}

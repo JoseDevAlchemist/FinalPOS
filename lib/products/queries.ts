@@ -211,3 +211,16 @@ export async function getProductByBarcode(
 
   return data ? parseProduct(data) : null;
 }
+
+const categoryOptionsSchema = z.array(z.object({ id: z.string().uuid(), name: z.string().min(1) }));
+const fallbackCategories = [{ id: "bag", name: "Bag" }, { id: "shoe", name: "Shoe" }];
+
+export async function listProductCategories() {
+  const client = await createClient();
+  const { data, error } = await client.from("categories").select("id, name")
+    .eq("is_active", true).order("display_order").order("name").order("id");
+
+  if (error?.code === "42P01" || error?.code === "PGRST205") return fallbackCategories;
+  if (error) throw new Error("Could not load product categories.");
+  return categoryOptionsSchema.parse(data);
+}

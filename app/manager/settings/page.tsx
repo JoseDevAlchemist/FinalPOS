@@ -1,11 +1,11 @@
 import { requireManager } from "@/lib/auth/session";
-import { getExchangeRate } from "@/lib/sales/queries";
+import { readExchangeRate } from "@/lib/payments/settings";
 
 import { ExchangeRateForm } from "./exchange-rate-form";
 
 export default async function SettingsPage() {
   await requireManager();
-  const rate = await getExchangeRate();
+  const { rate, canEdit } = await readExchangeRate();
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
@@ -23,7 +23,11 @@ export default async function SettingsPage() {
           Used to derive USD display prices. Completed sales keep their historical KES amounts.
         </p>
         <div className="mt-4">
-          <ExchangeRateForm initialRate={rate} />
+          {canEdit ? <ExchangeRateForm initialRate={rate} /> : (
+            <p role="status" className="text-sm text-muted">
+              Shared rate unavailable. The POS preview uses {rate} KES per USD.
+            </p>
+          )}
         </div>
       </section>
     </div>

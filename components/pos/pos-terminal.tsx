@@ -30,7 +30,7 @@ import {
 } from "@/lib/products/types";
 import type { SaleRecord } from "@/lib/validation/sales";
 
-export function PosTerminal({ products }: { products: CatalogueProduct[] }) {
+export function PosTerminal({ products, cardEnabled }: { products: CatalogueProduct[]; cardEnabled: boolean }) {
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedColors, setSelectedColors] = useState<Record<string, string>>({});
@@ -447,7 +447,7 @@ export function PosTerminal({ products }: { products: CatalogueProduct[] }) {
         </div>
       </aside>
 
-      <CheckoutDialog open={checkoutOpen} total={total} subtotal={subtotal}
+      <CheckoutDialog cardEnabled={cardEnabled} open={checkoutOpen} total={total} subtotal={subtotal}
         cashTendered={cashTendered} onCashChange={setCashTendered} submitting={submitting}
         onCashConfirm={() => startTransition(() => { void completeSale(); })}
         onClose={() => setCheckoutOpen(false)} getCartItems={() => buildCartItems(cart, byId)}

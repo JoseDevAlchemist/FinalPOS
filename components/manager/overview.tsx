@@ -2,6 +2,7 @@ import { AlertTriangle, Banknote, ShoppingBag, TrendingUp } from "lucide-react";
 
 import { requireManager } from "@/lib/auth/session";
 import { formatKes } from "@/lib/currency";
+import { readExchangeRate } from "@/lib/payments/settings";
 import { getDashboardStats } from "@/lib/sales/queries";
 
 function formatTime(iso: string): string {
@@ -18,14 +19,15 @@ function formatTime(iso: string): string {
 export default async function ManagerOverview() {
   await requireManager();
   let stats;
-  try { stats = await getDashboardStats(); }
+  let settings;
+  try { [stats, settings] = await Promise.all([getDashboardStats(), readExchangeRate()]); }
   catch { return <div role="alert" className="mx-auto max-w-6xl p-8 text-danger">The overview could not be loaded. Refresh to try again.</div>; }
 
   const todayTotal = stats?.todayTotal ?? 0;
   const todayCount = stats?.todayCount ?? 0;
   const lowStock = stats?.lowStock ?? [];
   const recentSales = stats?.recentSales ?? [];
-  const exchangeRate = stats?.exchangeRate ?? 130;
+  const exchangeRate = settings.rate;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">

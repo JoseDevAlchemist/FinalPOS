@@ -1,4 +1,5 @@
 import { PosTerminal } from "@/components/pos/pos-terminal";
+import { isCardPaymentConfigured } from "@/lib/flutterwave/config";
 import { requireStaff } from "@/lib/auth/session";
 import { listActiveProducts } from "@/lib/products/queries";
 
@@ -22,7 +23,7 @@ export default async function PosHome() {
         </div>
       </header>
 
-      <PosTerminal products={products} />
+      <PosTerminal products={products} cardEnabled={isCardPaymentConfigured()} />
     </div>
   );
 }

@@ -18,14 +18,11 @@ export async function updateExchangeRateAction(input: unknown): Promise<Settings
 
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("shop_settings")
-      .update({ exchange_rate_kes_to_usd: parsed.data.kes_per_usd })
-      .eq("key", "exchange_rate")
-      .select("exchange_rate_kes_to_usd")
-      .single();
+    const { error } = await supabase.rpc("pos_manager_update_exchange_rate", {
+      p_rate: parsed.data.kes_per_usd,
+    });
 
-    if (error || !data) {
+    if (error) {
       console.error("[settings] exchange rate update failed", error);
       return { ok: false, error: "Could not save the exchange rate." };
     }
@@ -33,6 +30,7 @@ export async function updateExchangeRateAction(input: unknown): Promise<Settings
     revalidatePath("/manager");
     revalidatePath("/manager/dashboard");
     revalidatePath("/manager/settings");
+    revalidatePath("/manager/products/new");
     return { ok: true };
   } catch (error) {
     console.error("[settings] exchange rate update failed", error);

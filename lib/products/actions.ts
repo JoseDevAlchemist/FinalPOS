@@ -59,6 +59,10 @@ function explain(error: unknown): string {
     return "One of those values is outside what the catalogue allows. Check the price, discount, colours and stock.";
   }
 
+  if (message.includes("category_not_found")) {
+    return "That category is no longer available. Refresh and choose an active category.";
+  }
+
   if (code === "P0002" || /not_found/i.test(message)) {
     return "That product or colour no longer exists. Refresh and try again.";
   }
@@ -201,7 +205,7 @@ export async function uploadProductImageAction(
 
   try {
     const admin = createAdminClient();
-    const path = `${fields.data.productId}/${slugify(fields.data.colorKey)}-${fields.data.angle}-${Date.now()}.${extension}`;
+    const path = `${fields.data.productId}/${slugify(fields.data.colorKey)}-${fields.data.angle}-${crypto.randomUUID()}.${extension}`;
 
     const { error } = await admin.storage
       .from("product-images")

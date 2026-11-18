@@ -873,3 +873,16 @@ Manual registration diagnostics now show the exact OAuth URL, four-character
 consumer-key prefix, lengths and SHA-256 header fingerprint. Authorization is
 redacted in output while the complete Basic header is sent privately to OAuth.
 No full credential, Base64 credential pair or provider token enters these logs.
+
+### Manager settings and dynamic product categories
+
+Migration `20261118100000_pos_manager_settings_catalogue.sql` adds
+`exchange_rate_kes_to_usd` to the storefront text-ID settings layout. The POS
+reads the `default` row, with support for the POS-only `exchange_rate` row.
+`pos_manager_update_exchange_rate` validates the rate and records the manager
+and value in `pos_management_events`.
+
+On installations with the storefront categories migration, the product-create
+RPC validates the selected active category and writes `products.category_id`
+in the same transaction as the product, barcode, variants and image links. The
+legacy category remains available for existing catalogue queries.

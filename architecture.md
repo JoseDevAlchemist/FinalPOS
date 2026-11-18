@@ -539,3 +539,12 @@ still need verification outside the network/container-restricted session.
 Registration configuration loading is explicit at CLI startup (--env-file) and
 script-relative for direct execution. File-loading errors and missing/blank
 credentials fail before OAuth; existing shell environment precedence is retained.
+
+### Manager catalogue and rate compatibility
+
+The manager product form reads the exchange rate and active storefront categories
+on the server. Per-colour image uploads use the manager-authorized Server Action
+and `product-images` Storage bucket. The catalogue RPC persists the public URLs
+alongside barcode, category, variants and stock movements. The USD figure is a
+preview calculated from the shared rate. The till receives only a boolean for
+Flutterwave availability.

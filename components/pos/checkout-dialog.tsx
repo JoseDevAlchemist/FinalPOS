@@ -14,8 +14,8 @@ type CartItems = z.infer<typeof cashSaleSchema>["cart_items"];
 const responseSchema = z.object({ transactionId: z.string().uuid().optional(), status: paymentStatusSchema.optional(), error: z.string().optional(), notStarted: z.boolean().optional() });
 const statusSchema = z.object({ status: paymentStatusSchema, sale: saleRecordSchema.nullable() });
 
-export function CheckoutDialog({ open, total, subtotal, cashTendered, onCashChange, submitting, onCashConfirm, onClose, getCartItems, onPaymentLockChange, onComplete }: {
-  open: boolean; total: number; subtotal: number; cashTendered: string; onCashChange: (value: string) => void;
+export function CheckoutDialog({ cardEnabled, open, total, subtotal, cashTendered, onCashChange, submitting, onCashConfirm, onClose, getCartItems, onPaymentLockChange, onComplete }: {
+  cardEnabled: boolean; open: boolean; total: number; subtotal: number; cashTendered: string; onCashChange: (value: string) => void;
   submitting: boolean; onCashConfirm: () => void; onClose: () => void; getCartItems: () => CartItems;
   onPaymentLockChange: (locked: boolean) => void; onComplete: (sale: SaleRecord) => void;
 }) {
@@ -133,15 +133,15 @@ export function CheckoutDialog({ open, total, subtotal, cashTendered, onCashChan
   return <dialog ref={dialog} onCancel={(event) => { if (submitting || dispatching || cardBusy) event.preventDefault(); else onClose(); }} aria-label="Checkout"
     className="fixed inset-0 m-auto max-h-[90dvh] w-full max-w-lg overflow-auto rounded-2xl border border-border bg-card p-5 text-foreground shadow-card-lift backdrop:bg-black/50">
     <header className="flex items-center justify-between"><h2 className="font-serif text-xl font-semibold">Checkout</h2><button type="button" disabled={submitting || dispatching || cardBusy} onClick={onClose} aria-label="Close checkout" className="rounded p-2 focus-visible:outline-2 focus-visible:outline-accent"><X aria-hidden="true" className="size-5" /></button></header>
-    <div className="mt-4 grid grid-cols-3 gap-2" role="group" aria-label="Payment method">
+    <div className={`mt-4 grid gap-2 ${cardEnabled ? "grid-cols-3" : "grid-cols-2"}`} role="group" aria-label="Payment method">
       <button type="button" aria-pressed={tab === "cash"} disabled={submitting || switching || cardLocked} onClick={chooseCash} className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border aria-pressed:border-primary aria-pressed:bg-primary/10 focus-visible:outline-2 focus-visible:outline-accent"><Banknote aria-hidden="true" className="size-4" />Cash</button>
       <button type="button" aria-pressed={tab === "mpesa"} disabled={submitting || switching || cardLocked} onClick={() => setTab("mpesa")} className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border aria-pressed:border-primary aria-pressed:bg-primary/10 focus-visible:outline-2 focus-visible:outline-accent"><Smartphone aria-hidden="true" className="size-4" />M-Pesa</button>
-      <button type="button" aria-pressed={tab === "card"} disabled={submitting || switching || locked} onClick={() => {
+      {cardEnabled ? <button type="button" aria-pressed={tab === "card"} disabled={submitting || switching || locked} onClick={() => {
         startSwitch(async () => {
           if (draft.current && !(await cancelMpesaDraftAction(draft.current)).ok) { toast.error("Payment unresolved", "Resolve M-Pesa before card payment."); return; }
           draft.current = null; attempt.current = null; setTransactionId(null); setStatus(null); setTab("card");
         });
-      }} className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border aria-pressed:border-primary aria-pressed:bg-primary/10 focus-visible:outline-2 focus-visible:outline-accent"><CreditCard aria-hidden="true" className="size-4" />Card</button>
+      }} className="flex h-12 items-center justify-center gap-2 rounded-lg border border-border aria-pressed:border-primary aria-pressed:bg-primary/10 focus-visible:outline-2 focus-visible:outline-accent"><CreditCard aria-hidden="true" className="size-4" />Card</button> : null}
     </div>
     <div className="mt-4 space-y-3 rounded-xl border border-border bg-background p-4 text-sm"><div className="flex justify-between"><span className="text-muted">Subtotal</span><span>{formatKes(subtotal)}</span></div><div className="flex justify-between border-t border-border pt-2 font-semibold"><span>Total</span><span>{formatKes(total)}</span></div></div>
     {tab === "cash" ? <div className="mt-4 space-y-3">
@@ -158,9 +158,9 @@ export function CheckoutDialog({ open, total, subtotal, cashTendered, onCashChan
       {transactionId && (timedOut || status === "failed" || status === "reconciliation" || status === "manual_pending") ? <fieldset className="space-y-2 rounded-xl border border-border p-3"><legend className="px-1 text-sm font-semibold">Manual fallback</legend><label className="block text-sm">M-Pesa receipt code<input maxLength={10} value={manualCode} onChange={(event) => setManualCode(event.target.value.toUpperCase())} className={inputClass} /></label><button type="button" onClick={() => void saveManual()} disabled={manualCode.length !== 10} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold">Save unverified code</button><p className="text-xs text-muted">A typed code is not proof of payment. It is saved for reconciliation and does not create a paid receipt.</p></fieldset> : null}
     </div> : null}
     {cardLocked && tab !== "card" ? <p role="status" className="mt-4 text-sm text-muted">A saved card payment needs verification. Open Card to recover it.</p> : null}
-    <FlutterwaveCheckout active={tab === "card"} total={total} getCartItems={getCartItems}
+    {cardEnabled ? <FlutterwaveCheckout active={tab === "card"} total={total} getCartItems={getCartItems}
       onLockChange={(value) => { setCardLocked(value); onPaymentLockChange(value || locked); }} onBusyChange={setCardBusy}
       onHostedOpen={() => dialog.current?.close()} onHostedClose={() => { if (openRef.current) dialog.current?.showModal(); }}
-      onComplete={(sale) => { setCardLocked(false); setCardBusy(false); setTab("cash"); onPaymentLockChange(false); toast.success("Payment received", "Card payment verified by the server."); onComplete(sale); }} />
+      onComplete={(sale) => { setCardLocked(false); setCardBusy(false); setTab("cash"); onPaymentLockChange(false); toast.success("Payment received", "Card payment verified by the server."); onComplete(sale); }} /> : null}
   </dialog>;
 }

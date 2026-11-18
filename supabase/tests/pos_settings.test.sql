@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set search_path=public,extensions;
-select plan(10);
+select plan(12);
 select is((select count(*)::integer from public.shop_settings),1,'one settings row');
 select ok(not has_table_privilege('anon','public.shop_settings','update'),'anon cannot update');
 select ok(not has_table_privilege('authenticated','public.shop_settings','delete'),'staff cannot delete singleton');
@@ -11,13 +11,15 @@ insert into auth.users(id,email) values('f5000000-0000-4000-8000-000000000001','
 update public.pos_users set auth_user_id='f5000000-0000-4000-8000-000000000001' where id='a1c9f1e2-0000-4000-8000-000000000002';
 select set_config('request.jwt.claim.sub','f5000000-0000-4000-8000-000000000001',true);
 set local role authenticated;
-select lives_ok($$update public.shop_settings set exchange_rate_kes_to_usd=132.75 where key='exchange_rate'$$,'manager saves decimal rate directly');
+select lives_ok($$select public.pos_manager_update_exchange_rate(132.75)$$,'manager saves decimal rate through the RPC');
 select is((select exchange_rate_kes_to_usd from public.shop_settings),132.75::numeric,'rate persisted');
 select is((select (value->>'kes_per_usd')::numeric from public.shop_settings),132.75::numeric,'legacy JSON projection synchronized');
 select is((select updated_by from public.shop_settings),'a1c9f1e2-0000-4000-8000-000000000002'::uuid,'actor stamped');
+select ok(exists(select 1 from public.pos_management_events where kind='exchange_rate_updated' and payload->>'kes_per_usd'='132.75'),'rate update audited');
 reset role;
 select set_config('request.jwt.claim.sub','f5000000-0000-4000-8000-000000000099',true);
 set local role authenticated;
+select throws_ok($$select public.pos_manager_update_exchange_rate(999)$$,'42501','not_authorized','RPC rejects unrecognized staff');
 update public.shop_settings set exchange_rate_kes_to_usd=999;
 select is((select exchange_rate_kes_to_usd from public.shop_settings),132.75::numeric,'unrecognized staff cannot change rate');
 reset role;

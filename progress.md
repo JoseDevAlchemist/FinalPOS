@@ -984,3 +984,18 @@ Verification:
   default rate when the POS exchange-rate row is absent.
 - The remote schema query and migration push were blocked by a missing Supabase
   access token. Local pgTAP could not connect to PostgreSQL.
+
+## 2026-11-18 — Manager settings, product creation and card availability
+
+- Settings supports the storefront's `id = 'default'` row and the local
+  `key = 'exchange_rate'` row. Rate edits use an audited manager RPC.
+- Product creation uses active storefront categories with a Bag/Shoe fallback
+  when the table is absent. Colour uploads use the existing Storage action and
+  the product RPC persists barcode, category, variants and image links.
+- The till shows card checkout only when both Flutterwave keys are configured.
+- Added browser coverage for the exchange-rate screen and creating a product
+  with a barcode and uploaded photo. Local Supabase startup was blocked by the
+  container runtime's read-only directory.
+- Settings lookup and card availability passed with mocked inputs. Playwright
+  could not start Chromium under the sandbox, and pgTAP could not connect to the
+  local PostgreSQL endpoint.
