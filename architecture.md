@@ -548,3 +548,27 @@ and `product-images` Storage bucket. The catalogue RPC persists the public URLs
 alongside barcode, category, variants and stock movements. The USD figure is a
 preview calculated from the shared rate. The till receives only a boolean for
 Flutterwave availability.
+
+### Catalogue image staging
+
+Create and edit share a per-colour file picker, drop area and angle editor.
+Device-local previews use revocable object URLs. On save, the manager-only
+upload action validates MIME, file size and decodable content before transferring
+the original bytes to Storage. Content-derived object keys let an interrupted
+upload retry without overwriting a live photo. The form reuses successful
+uploads and stops before any catalogue mutation if a photo fails. An uncertain
+catalogue response keeps the exact payload and request ID for confirmation.
+
+Storage and PostgreSQL commit separately. Abandoned saves may leave an
+unused Storage object. Photo removal edits the database reference and preserves
+the object for any other reference. The catalogue RPC commits the product,
+colour IDs, photo links, publication state and opening ledger entries atomically.
+
+### Catalogue save boundaries
+
+The catalogue RPC checks the active manager directly and verifies the actor,
+kind and payload recorded by the private request-claim helper. New photo links
+must match the RPC's trusted Storage origin and an existing object in the
+product's directory. Existing legacy links can remain on their saved variant.
+An edit retires a colour by deletion only when it has zero stock and no known
+history or foreign-key references beyond photo metadata.

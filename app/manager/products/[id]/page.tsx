@@ -6,7 +6,8 @@ import { QuickRestock } from "@/components/manager/quick-restock";
 import { productTotalStock } from "@/lib/products/types";
 import { ProductEditForm } from "@/components/manager/product-edit-form";
 import { requireManager } from "@/lib/auth/session";
-import { getProduct } from "@/lib/products/queries";
+import { readExchangeRate } from "@/lib/payments/settings";
+import { getProduct, listProductCategories, supportsUsdPriceOverride } from "@/lib/products/queries";
 
 export default async function EditProductPage({
   params,
@@ -16,7 +17,9 @@ export default async function EditProductPage({
   await requireManager();
 
   const { id } = await params;
-  const product = await getProduct(id);
+  const [product, categories, exchangeRate, supportsOverride] = await Promise.all([
+    getProduct(id), listProductCategories(), readExchangeRate(), supportsUsdPriceOverride(),
+  ]);
 
   if (!product) notFound();
 
@@ -35,8 +38,8 @@ export default async function EditProductPage({
             {product.name}
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Published, active products with available stock are eligible for the
-            storefront. Saved changes use the shared catalogue.
+            Website publication uses the shared catalogue. Available stock determines
+            whether shoppers can buy the product.
           </p>
         </div>
 
@@ -58,7 +61,7 @@ export default async function EditProductPage({
         </div>
         <QuickRestock productId={product.id} productName={product.name} colors={product.colors} />
       </section>
-      <ProductEditForm key={product.id} product={product} />
+      <ProductEditForm key={product.id} product={product} categories={categories} exchangeRate={exchangeRate.rate} supportsOverride={supportsOverride} />
     </div>
   );
 }

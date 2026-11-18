@@ -12,19 +12,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { barcodeLookupSchema, productIdSchema } from "@/lib/validation/products";
 
-const PRODUCT_SELECT = `
-  id,
-  name,
-  slug,
-  description,
-  category,
-  base_price,
-  discount_percent,
-  barcode,
-  active,
-  is_website_published,
-  created_at,
-  product_colors (
+const COLOR_SELECT = `  product_colors (
     id,
     color_name,
     color_hex,
@@ -37,6 +25,21 @@ const PRODUCT_SELECT = `
       sort_order
     )
   )
+`;
+
+const PRODUCT_SELECT = `
+  id,
+  name,
+  slug,
+  description,
+  category,
+  base_price,
+  discount_percent,
+  barcode,
+  active,
+  is_website_published,
+  created_at,
+  ${COLOR_SELECT}
 `;
 
 const imageRowSchema = z.object({
@@ -64,6 +67,8 @@ const productRowSchema = z.object({
   slug: z.string(),
   description: z.string(),
   category: z.enum(PRODUCT_CATEGORIES),
+  category_id: z.string().uuid().nullish(),
+  base_price_usd: z.number().int().positive().nullish(),
   base_price: z.number().int().nonnegative(),
   discount_percent: z.number().int().min(0).max(100),
   barcode: z.string().nullish().transform((value) => value ?? null),
@@ -110,6 +115,8 @@ function mapProduct(row: ProductRow): CatalogueProduct {
     slug: row.slug,
     description: row.description,
     category: row.category,
+    categoryId: row.category_id,
+    basePriceUsd: row.base_price_usd,
     basePrice: row.base_price,
     discountPercent: row.discount_percent,
     barcode: row.barcode,
@@ -180,7 +187,7 @@ export async function getProduct(id: string): Promise<CatalogueProduct | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("products")
-    .select(PRODUCT_SELECT)
+    .select(`*, ${COLOR_SELECT}`)
     .eq("id", productId)
     .maybeSingle();
 
@@ -212,15 +219,39 @@ export async function getProductByBarcode(
   return data ? parseProduct(data) : null;
 }
 
-const categoryOptionsSchema = z.array(z.object({ id: z.string().uuid(), name: z.string().min(1) }));
-const fallbackCategories = [{ id: "bag", name: "Bag" }, { id: "shoe", name: "Shoe" }];
+const categoryOptionsSchema = z.array(z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  parent_id: z.string().uuid().nullable(),
+}));
 
 export async function listProductCategories() {
   const client = await createClient();
-  const { data, error } = await client.from("categories").select("id, name")
+  const { data, error } = await client.from("categories")
+    .select("id, name, slug, parent_id")
     .eq("is_active", true).order("display_order").order("name").order("id");
 
-  if (error?.code === "42P01" || error?.code === "PGRST205") return fallbackCategories;
+  if (error?.code === "42P01" || error?.code === "PGRST205") return null;
   if (error) throw new Error("Could not load product categories.");
-  return categoryOptionsSchema.parse(data);
+  const categories = categoryOptionsSchema.parse(data)
+    .map(({ parent_id, ...category }) => ({ ...category, parentId: parent_id }));
+  // Hide descendants of inactive categories and malformed branches.
+  const visible = new Set(categories.filter((category) => !category.parentId).map(({ id }) => id));
+  let previousSize = 0;
+  while (previousSize < visible.size) {
+    previousSize = visible.size;
+    for (const category of categories) {
+      if (category.parentId && visible.has(category.parentId)) visible.add(category.id);
+    }
+  }
+  return categories.filter(({ id }) => visible.has(id));
+}
+
+export async function supportsUsdPriceOverride(): Promise<boolean> {
+  const client = await createClient();
+  const { error } = await client.from("products").select("base_price_usd").limit(0);
+  if (error?.code === "42703") return false;
+  if (error) throw new Error("Could not check catalogue price options.");
+  return true;
 }

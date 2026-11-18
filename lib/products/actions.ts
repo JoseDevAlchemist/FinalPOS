@@ -1,29 +1,23 @@
 "use server";
 
+import { createHash } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import { requireManager } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { productImageFileError } from "@/lib/products/image-files";
+import { verifyProductImage } from "@/lib/products/image-validation";
 import {
   stockAdjustmentRequestSchema,
-  productCreateSchema,
-  productEditSchema,
-  productUpsertSchema,
+  validateProductDraft,
   uploadImageFieldsSchema,
 } from "@/lib/validation/products";
 
 export type ProductActionResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string };
-
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/avif": "avif",
-};
 
 function isRedirect(error: unknown): boolean {
   return (
@@ -46,7 +40,7 @@ function explain(error: unknown): string {
   }
 
   if (code === "PGRST202" || /function .* does not exist|schema cache/i.test(message)) {
-    return "The catalogue function is missing. Apply the latest Supabase migration.";
+    return "Catalogue saving requires the approved catalogue RPC migration.";
   }
 
   if (code === "23505" || /barcode_taken|catalogue_conflict/i.test(message)) {
@@ -54,11 +48,20 @@ function explain(error: unknown): string {
   }
 
   if (/idempotency_mismatch/i.test(message)) return "This request was already saved with different details. Refresh before starting a new change.";
-  if (/color_has_stock|color_has_sales|color_has_adjustments/i.test(message)) return "Keep colours with stock, inventory history or historical sales. Adjust stock separately.";
+  if (/color_has_stock|color_has_sales|color_has_adjustments|color_has_history/i.test(message)) return "Keep colours with stock, inventory history or historical sales. Adjust stock separately.";
+  if (message.includes("catalogue_stock_projection_mismatch")) {
+    return "The saved stock total differs from the colour quantities. Check the inventory projection before retrying.";
+  }
   if (code === "23514") {
     return "One of those values is outside what the catalogue allows. Check the price, discount, colours and stock.";
   }
 
+  if (message.includes("invalid_image_url")) return "Upload new photos to this catalogue’s product-images bucket or keep an existing photo.";
+  if (message.includes("usd_override_unavailable")) return "USD overrides are unavailable in this catalogue.";
+  if (message.includes("storefront_product_limits")) {
+    return "Check the website limits for the name, description, price, discount and colours.";
+  }
+  if (message.includes("category_required")) return "Choose an active storefront category before publishing.";
   if (message.includes("category_not_found")) {
     return "That category is no longer available. Refresh and choose an active category.";
   }
@@ -69,68 +72,6 @@ function explain(error: unknown): string {
 
   console.error("[products] catalogue action failed", error);
   return "Something went wrong saving that. The details are in the server log.";
-}
-
-function slugify(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "colour"
-  );
-}
-
-export async function updateProductAction(
-  input: unknown,
-): Promise<ProductActionResult<{ id: string }>> {
-  await requireManager();
-
-  const parsed = productEditSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Check the product details.",
-    };
-  }
-
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.rpc("pos_manager_update_product", {
-      p_product_id: parsed.data.productId,
-      p_name: parsed.data.name,
-      p_description: parsed.data.description,
-      p_category: parsed.data.category,
-      p_base_price: parsed.data.basePrice,
-      p_discount_percent: parsed.data.discountPercent,
-      p_barcode: parsed.data.barcode || null,
-      p_active: parsed.data.active,
-      p_is_website_published: parsed.data.isWebsitePublished,
-      p_colors: parsed.data.colors.map((color) => ({
-        id: color.id,
-        name: color.name,
-        hex: color.hex,
-        images: color.images.map((image) => ({
-          angle: image.angle,
-          image_url: image.imageUrl,
-        })),
-      })),
-    });
-
-    if (error) throw error;
-
-    revalidatePath("/manager");
-    revalidatePath("/manager/products");
-    revalidatePath("/manager/products/[id]", "page");
-    revalidatePath("/pos");
-    revalidatePath("/manager/inventory");
-
-    return { ok: true, data: { id: String(data) } };
-  } catch (error) {
-    if (isRedirect(error)) throw error;
-    return { ok: false, error: explain(error) };
-  }
 }
 
 export async function adjustStock(
@@ -190,73 +131,62 @@ export async function uploadProductImageAction(
   }
 
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: "Choose an image to upload." };
-  }
+  if (!(file instanceof File)) return { ok: false, error: "Choose an image to upload." };
+  const issue = productImageFileError(file);
+  if (issue) return { ok: false, error: issue };
 
-  const extension = ALLOWED_IMAGE_TYPES[file.type];
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const extension = await verifyProductImage(bytes, file.type);
   if (!extension) {
-    return { ok: false, error: "Upload a JPEG, PNG, WebP or AVIF image." };
-  }
-
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return { ok: false, error: "Images must be smaller than 4MB." };
+    return { ok: false, error: "The file is unreadable, too large to decode, or does not match its image format." };
   }
 
   try {
-    const admin = createAdminClient();
-    const path = `${fields.data.productId}/${slugify(fields.data.colorKey)}-${fields.data.angle}-${crypto.randomUUID()}.${extension}`;
+    const { productId, colorKey, angle } = fields.data;
+    const digest = createHash("sha256").update(JSON.stringify([colorKey, angle])).update(bytes).digest("hex");
+    const path = `${productId}/pos-${angle}-${digest}.${extension}`;
+    const bucket = createAdminClient().storage.from("product-images");
+    const { error } = await bucket.upload(path, bytes, {
+      contentType: file.type,
+      cacheControl: "31536000",
+      upsert: false,
+    });
 
-    const { error } = await admin.storage
-      .from("product-images")
-      .upload(path, file, {
-        contentType: file.type,
-        cacheControl: "31536000",
-        upsert: false,
-      });
+    // An interrupted response can leave the exact object in Storage already.
+    if (error && !(await bucket.exists(path)).data) throw error;
 
-    if (error) throw error;
-
-    const { data } = admin.storage.from("product-images").getPublicUrl(path);
-    return { ok: true, data: { url: data.publicUrl } };
+    return { ok: true, data: { url: bucket.getPublicUrl(path).data.publicUrl } };
   } catch (error) {
     if (isRedirect(error)) throw error;
     console.error("[products] image upload failed", error);
-    return {
-      ok: false,
-      error:
-        "That image could not be uploaded. Check that local storage is running and the product-images bucket exists.",
-    };
+    return { ok: false, error: "Storage could not confirm the upload. Retry saving to try this file again." };
   }
 }
 
-export async function createProductAction(input: unknown): Promise<ProductActionResult<{ id: string }>> {
+export async function upsertProduct(input: unknown): Promise<ProductActionResult<{ id: string }>> {
   await requireManager();
-  const parsed = productCreateSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the product details." };
-  const { clientUuid, ...product } = parsed.data;
-  const client = await createClient();
-  const { data, error } = await client.rpc("pos_manager_create_product", { p_client_uuid: clientUuid, p_product: product });
-  if (error) return { ok: false, error: explain(error) };
-  if (typeof data !== "string") return { ok: false, error: "Could not confirm the product. Retry with the same details." };
-  revalidatePath("/manager");
-  revalidatePath("/manager/products");
-  revalidatePath("/pos");
-  return { ok: true, data: { id: data } };
-}
-
-
-export async function upsertProduct(
-  input: unknown,
-): Promise<ProductActionResult<{ id: string }>> {
-  await requireManager();
-  const parsed = productUpsertSchema.safeParse(input);
+  const parsed = validateProductDraft(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the product details." };
   }
-  // Both branches use manager-authorized transactional RPCs on shared products,
-  // preserving colour identities and the inventory ledger when editing.
-  return "productId" in parsed.data
-    ? updateProductAction(parsed.data)
-    : createProductAction(parsed.data);
+
+  const client = await createClient();
+  const { clientUuid, ...product } = parsed.data;
+  const { data, error, status } = await client.rpc("pos_manager_save_catalogue_product", {
+    p_client_uuid: clientUuid,
+    p_product: product,
+  });
+  if (error) {
+    // Status 0/5xx or an HTTP request error can leave the commit outcome unknown.
+    // Let the client retry the exact payload with its existing UUID.
+    if (!status || status >= 500 || !error.code) throw new Error("Could not confirm the catalogue save.");
+    return { ok: false, error: explain(error) };
+  }
+  if (typeof data !== "string") throw new Error("Could not confirm the catalogue save.");
+  revalidatePath("/manager");
+  revalidatePath("/manager/products");
+  revalidatePath("/manager/products/[id]", "page");
+  revalidatePath("/pos");
+  revalidatePath("/manager/inventory");
+  return { ok: true, data: { id: data } };
 }

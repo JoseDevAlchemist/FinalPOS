@@ -886,3 +886,77 @@ On installations with the storefront categories migration, the product-create
 RPC validates the selected active category and writes `products.category_id`
 in the same transaction as the product, barcode, variants and image links. The
 legacy category remains available for existing catalogue queries.
+
+### Ordered product photography and shared catalogue saves
+
+The proposed `20261118120000_pos_catalogue_multi_image.sql` migration adds
+`pos_manager_save_catalogue_product(uuid, jsonb)` without changing shared
+tables, constraints, RLS, stock projections or existing RPC signatures. The
+old create RPC accepts a single front photo per colour and the old edit RPC
+cannot persist a category relationship or USD override. The new RPC commits the
+shared product details, colour rows, ordered image metadata and opening-stock
+ledger entries in one audited transaction. Both operations replay by request
+UUID and original payload. Edit keeps supplied colour IDs and rejects removal
+of variants with stock or history. The existing stock triggers own the aggregate
+and the opening-stock audit.
+
+A new website publication requires an active category branch. The assigned
+category ID determines storefront collection membership. The branch root's
+name and slug determine the legacy `bag` or `shoe` detail route using the
+same mapping as the storefront. First publication checks the storefront
+editor's field limits, including its 99% discount and eight-colour caps.
+`base_price_usd` is optional
+and used only when the shared schema exposes it. No material column was found
+in the storefront schema reference.
+
+Uploads store original bytes in the existing public `product-images` bucket.
+The POS submits the Storage SDK's original object URL and MIME type. Images are
+linked by `product_images.color_id`, with one row per populated angle and
+`sort_order` matching form order. Existing photographed slots keep their row
+IDs when the same angle is edited. New URLs must identify a verified object in the shared bucket. An
+existing legacy reference may be carried forward on the same variant.
+
+Review the additive RPC with the storefront owner before release. Confirm the
+production active/publication policies for products and nested rows. The
+storefront reads depend on those policies, and the storefront baseline alone
+filters by `active` without checking `is_website_published`. Check actual cache
+refresh behaviour after a POS write and verify that the SKU-privacy change from
+the earlier session has been coordinated with the public query projection.
+
+### Multi-image migration staging requirements
+
+Run the read-only `docs/catalogue-migration-preflight.sql` against the approved
+review target and compare it with the checked-in definitions. The migration
+checks the private request helper, history tables, public image bucket, colour
+and angle uniqueness and enabled stock triggers. The installer must be able to
+read all referenced rows, including Storage metadata. The RPC fails if RLS
+would silently hide a history row from its owner. Verify the actual helper and
+trigger definitions and grants, category schema and bucket configuration. Check
+for additional non-FK colour references and exercise anonymous publication on
+the target. Standalone PostgreSQL tests do not establish those conditions.
+
+Create explicitly sets `active` and, where available, `publish_to_pos` to true.
+The submitted website flag controls `is_website_published` independently. Edit
+keeps `publish_to_pos` unchanged and preserves the current `active` value unless
+the manager changed that control. Colour removal locks the candidate rows and
+rejects stock, known ledger and history references, POS payment and quotation
+snapshots and additional foreign keys to the colour row. Opening stock still
+flows through the existing triggers. A projection mismatch aborts the save.
+
+The approved Storage origin is pinned on the RPC from the storefront reference
+configuration. On isolated staging only, set that function-local origin as
+the function owner to the trusted staging Storage origin before testing:
+
+```sql
+alter function public.pos_manager_save_catalogue_product(uuid, jsonb)
+  set pos.catalogue_storage_origin = 'https://YOUR-STAGING-PROJECT.supabase.co';
+```
+
+For a local Supabase stack use its browser-reachable local origin. Confirm the
+POS uses that same origin. New URLs must use the original public
+`product-images` endpoint, the saved product's UUID directory and a canonical
+image key that already exists in Storage. The RPC preserves existing HTTP(S)
+or storefront-relative URLs on the same variant. Keep the separate
+private-product-code migration outside the scope of this review. Apply the
+reviewed SQL individually in staging so a blanket migration run cannot pick
+up the separate grant change.

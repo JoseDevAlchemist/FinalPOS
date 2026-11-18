@@ -1004,3 +1004,66 @@ Verification:
 
 - Set the receipt print rule to `size: 80mm auto` with zero margins as requested.
   Browsers that ignore this declaration use the selected printer paper size.
+
+## 2026-11-18 — Website-compatible products and multi-image uploads
+
+- Expanded manager create and edit with hierarchical storefront categories,
+  discount, shared-rate USD preview and optional existing USD override.
+- Added native multi-file selection, drag-and-drop, device-local previews,
+  angle selection, removal, replacement and upload progress per colour.
+  JPEG, PNG, WebP and AVIF use the original bytes, with server-side decoding
+  and the existing 4 MB limit.
+- Prepared an additive catalogue RPC migration for review. The existing RPC
+  signatures, tables, stock triggers and publication policies remain in place.
+  The draft and publish saves use the same shared product and colour records.
+- Applied the storefront's category mapping and editor limits on first
+  publication. Existing products can keep their legacy details while photos
+  are edited. The source schema has no material column.
+- Found cross-app dependencies around publication RLS, SKU grants, storefront
+  cache invalidation and colour IDs. The storefront admin rebuilds colour IDs
+  in separate requests and can overwrite a stored photo before confirming the
+  product save. Its bag and shoe detail metadata also mishandles absolute
+  image URLs. The storefront repository was used as a read-only reference.
+- Lint and TypeScript passed. Five image and action tests passed with mocked
+  Storage. PostgreSQL single-user runs passed 22 functional assertions against
+  both the POS baseline and a combined storefront/POS schema. The standalone
+  backend bypasses RLS, so the anonymous publication assertion is still
+  pending on a running Supabase stack. Read-only storefront mapper and loader
+  fixtures passed for ordered and encoded WebP paths and missing photographs.
+- The standard build failed when the sandbox denied Turbopack's local port
+  binding. An isolated Webpack production build passed with a mocked font
+  response and the TypeScript compiler API. Chromium startup and the local
+  Supabase endpoint were unavailable. Desktop and mobile file selection,
+  Storage uploads, and published storefront visibility still need a browser
+  and an isolated Supabase stack.
+
+### Future mobile POS work
+
+- Review mobile navigation and header layout.
+- Improve product list and search responsiveness.
+- Review product form spacing and small-screen colour and photo controls.
+- Check touch target size for buttons and inputs.
+- Prevent horizontal scrolling across the manager and till views.
+
+## 2026-11-18 — Multi-image migration hardening review
+
+- Hardened the pending catalogue RPC with an independent active-manager
+  check, verification of the request claim, scoped Storage URL validation,
+  and dependency checks. The multi-image interface and RPC signature stay
+  the same.
+- Separated website publication from POS visibility and preserved the
+  current active state on edits unless the manager changes it. Protected
+  supplied colour IDs, history FKs, ledger entries and JSON snapshot
+  references. Added a stock projection postcondition.
+- Added a read-only preflight for the review target and expanded the SQL
+  regression suite. The private-code migration was excluded from the
+  isolated database used for this review.
+- Lint, TypeScript, five image/action tests and 40 standalone PostgreSQL
+  assertions passed. The local Supabase endpoint was unavailable, so the
+  anonymous publication assertion remains pending. The standard build was
+  blocked by Turbopack's sandbox port binding. An isolated Webpack production
+  build passed with mocked fonts and the TypeScript compiler API.
+- The hardened SQL is ready for isolated staging after comparing the
+  read-only preflight output with the expected schema and configuring the
+  trusted staging Storage origin. The actual production schema and grants
+  remain unverified.

@@ -46,6 +46,8 @@ export interface CatalogueProduct {
   slug: string;
   description: string;
   category: ProductCategory;
+  categoryId?: string | null;
+  basePriceUsd?: number | null;
   basePrice: number;
   discountPercent: number;
   barcode: string | null;
@@ -79,4 +81,39 @@ export function colorPrimaryImage(color: CatalogueColor | null): string | null {
   return color?.images.find((image) => image.angle === "front" && image.imageUrl)?.imageUrl
     ?? color?.images.find((image) => image.imageUrl)?.imageUrl
     ?? null;
+}
+
+export interface ProductCategoryOption {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+}
+
+export function categoryBranch(
+  categories: ProductCategoryOption[],
+  id: string,
+): ProductCategoryOption[] {
+  const branch: ProductCategoryOption[] = [];
+  let entry = categories.find((category) => category.id === id);
+  while (entry && !branch.some((category) => category.id === entry?.id)) {
+    branch.unshift(entry);
+    const parentId = entry.parentId;
+    entry = categories.find((category) => category.id === parentId);
+  }
+  return branch;
+}
+
+export function preferredProductAngles(category: ProductCategory): ProductAngle[] {
+  const preferred: ProductAngle[] = category === "shoe"
+    ? ["front", "laces", "side", "back", "bottom"]
+    : ["front", "side-left", "side-right", "top", "back"];
+  return [...preferred, ...PRODUCT_ANGLES.filter((angle) => !preferred.includes(angle))];
+}
+
+export function catalogueCategory(categories: ProductCategoryOption[] | null, selection: string, fallback: ProductCategory): ProductCategory {
+  if (!categories) return selection === "shoe" ? "shoe" : "bag";
+  const root = categoryBranch(categories, selection)[0];
+  if (!root) return fallback;
+  return /shoe|sneaker|boot|sandal|loafer|heel/i.test(`${root.slug} ${root.name}`) ? "shoe" : "bag";
 }
